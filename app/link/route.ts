@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { buildForwarderTarget, buildLinkCode, ensureLinksTable, findOrCreateLink, incrementLinkVisits } from "@/lib/neon"
+import { buildForwarderTarget, buildLinkCode, ensureLinksTable, findOrCreateLink, getVisitorId, setVisitorCookie, trackLinkVisit } from "@/lib/neon"
 
 export async function GET(request: Request) {
   const url = new URL(request.url)
@@ -12,7 +12,10 @@ export async function GET(request: Request) {
 
   await ensureLinksTable()
   await findOrCreateLink(finalTargetUrl, code)
-  const link = await incrementLinkVisits(code)
+  const visitor = getVisitorId(request.headers)
+  const link = await trackLinkVisit(code, request.headers, visitor.id)
 
-  return NextResponse.redirect(link?.target_url || finalTargetUrl)
+  const response = NextResponse.redirect(link?.target_url || finalTargetUrl)
+  setVisitorCookie(response, visitor)
+  return response
 }

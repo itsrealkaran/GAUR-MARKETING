@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { ensureLinksTable, sql } from "@/lib/neon"
+import { ensureLinksTable, getLinkAnalytics, sql } from "@/lib/neon"
 
 export async function GET(_request: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
@@ -11,5 +11,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ cod
   `
 
   if (!rows[0]) return NextResponse.json({ error: "Link not found" }, { status: 404 })
-  return NextResponse.json(rows[0])
+  const analytics = await getLinkAnalytics([code])
+  return NextResponse.json({ ...rows[0], analytics: analytics[0] || null })
 }

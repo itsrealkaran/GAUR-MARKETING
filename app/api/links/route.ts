@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { buildLinkCode, ensureLinksTable, normalizeTargetUrl, sql } from "@/lib/neon"
+import { buildLinkCode, ensureLinksTable, getLinkAnalytics, normalizeTargetUrl, sql } from "@/lib/neon"
 import crypto from "crypto"
 
 export async function GET(request: Request) {
@@ -19,8 +19,12 @@ export async function GET(request: Request) {
     LIMIT ${limit + 1} OFFSET ${offset}
   `
 
+  const links = rows.slice(0, limit)
+  const analytics = await getLinkAnalytics(links.map((row) => row.code))
+  const analyticsByCode = new Map(analytics.map((row) => [row.code, row]))
+
   return NextResponse.json({
-    links: rows.slice(0, limit),
+    links: links.map((link) => ({ ...link, analytics: analyticsByCode.get(link.code) || null })),
     hasMore: rows.length > limit,
     page,
     limit,

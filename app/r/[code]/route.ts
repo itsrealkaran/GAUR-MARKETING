@@ -1,26 +1,22 @@
 import { NextResponse } from "next/server"
-import { ensureLinksTable, sql } from "@/lib/neon"
+import { ensureLinksTable, getVisitorId, setVisitorCookie, trackLinkVisit } from "@/lib/neon"
 
-type LinkRow = { target_url: string }
-
-export async function GET(_request: Request, { params }: { params: Promise<{ code: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
 
   try {
     await ensureLinksTable()
-    const rows = (await sql`
-      UPDATE links
-      SET visits = visits + 1
-      WHERE code = ${code}
-      RETURNING target_url
-    `) as LinkRow[]
+    const visitor = getVisitorId(request.headers)
+    const link = await trackLinkVisit(code, request.headers, visitor.id)
 
-    if (rows[0]?.target_url) {
-      return NextResponse.redirect(rows[0].target_url)
+    if (link?.target_url) {
+      const response = NextResponse.redirect(link.target_url)
+      setVisitorCookie(response, visitor)
+      return response
     }
   } catch (error) {
     console.error("Failed to forward tracked link:", error)
   }
 
-  return NextResponse.redirect(new URL("/?error=invalid_url", _request.url))
+  return NextResponse.redirect(new URL("/?error=invalid_url", request.url))
 }

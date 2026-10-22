@@ -5,7 +5,19 @@ import { ArrowLeft, ArrowUpRight, Copy, Link2, RefreshCw, Search, ScrollText } f
 import { FormEvent, ReactNode, useEffect, useRef, useState } from "react"
 
 type Mode = "forwarder" | "whatsapp" | "redirect"
-type LinkRecord = { code: string; target_url: string; visits: number; created_at?: string }
+type AnalyticsBreakdown = { label: string; count: number }
+type LinkAnalytics = {
+  tracked_visits: number
+  unique_visitors: number
+  countries: AnalyticsBreakdown[]
+  cities: AnalyticsBreakdown[]
+  devices: AnalyticsBreakdown[]
+  operating_systems: AnalyticsBreakdown[]
+  browsers: AnalyticsBreakdown[]
+  languages: AnalyticsBreakdown[]
+  referrers: AnalyticsBreakdown[]
+}
+type LinkRecord = { code: string; target_url: string; visits: number; created_at?: string; analytics?: LinkAnalytics | null }
 type LinkPage = { links: LinkRecord[]; hasMore: boolean }
 
 export function LinkWorkspace() {
@@ -168,6 +180,15 @@ function LedgerRow({ link, origin }: { link: LinkRecord; origin: string }) {
   const isExternalUrl = /^https?:\/\//i.test(link.target_url)
   const previewUrl = isWhatsApp || isExternalUrl ? link.target_url : `${origin}/r/${link.code}`
   const type = isWhatsApp ? "WhatsApp" : isExternalUrl ? "Forwarder" : "Code redirect"
+  const breakdowns = [
+    { label: "Countries", items: link.analytics?.countries },
+    { label: "Cities", items: link.analytics?.cities },
+    { label: "Devices", items: link.analytics?.devices },
+    { label: "Operating systems", items: link.analytics?.operating_systems },
+    { label: "Browsers", items: link.analytics?.browsers },
+    { label: "Languages", items: link.analytics?.languages },
+    { label: "Referrers", items: link.analytics?.referrers },
+  ].filter((group) => group.items?.length)
 
   return (
     <div className="flex flex-col gap-3 py-5 sm:flex-row sm:items-center sm:justify-between">
@@ -178,9 +199,23 @@ function LedgerRow({ link, origin }: { link: LinkRecord; origin: string }) {
         <p className="mt-2 truncate text-sm font-semibold">{previewUrl}</p>
         <p className="mt-1 truncate text-sm text-[#202522]/50">{origin}/r/{link.code}</p>
       </div>
-      <div>
+      <div className="sm:w-64 sm:shrink-0">
         <p className="text-xs uppercase tracking-[0.16em] text-[#202522]/45">Visits</p>
         <p className="mt-1 text-2xl font-semibold">{link.visits.toLocaleString()}</p>
+        <p className="mt-1 text-xs text-[#202522]/50">{(link.analytics?.unique_visitors || 0).toLocaleString()} unique visitors</p>
+        {breakdowns.length > 0 ? (
+          <details className="mt-2 text-xs">
+            <summary className="cursor-pointer font-semibold text-[#bd5b32]">Visitor breakdown</summary>
+            <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3">
+              {breakdowns.map((group) => (
+                <div key={group.label} className="min-w-0">
+                  <p className="font-semibold text-[#202522]/65">{group.label}</p>
+                  {group.items?.map((item) => <p key={item.label} className="truncate text-[#202522]/50">{item.label}: {item.count.toLocaleString()}</p>)}
+                </div>
+              ))}
+            </div>
+          </details>
+        ) : <p className="mt-2 text-xs text-[#202522]/45">No visitor details yet</p>}
       </div>
     </div>
   )
