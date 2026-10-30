@@ -1,0 +1,15 @@
+{
+  "users": [
+    {
+      "id": "admin-id-1",
+      "fullName": "Platform Administrator",
+      "email": "admin@gaurlinks.com",
+      "passwordHash": "e17959d68db5188cfe23e4af96c4aeeba6215d7286d1b6f6b83af4c02aa8603617096fad16760e242b1e5a485d6924bb9993743476830c9604346d24fd625650",
+      "passwordSalt": "717b8e06c7d79922794ecb2a3847a138",
+      "paymentStatus": "verified",
+      "role": "admin",
+      "createdAt": "2026-10-22T08:30:30.485Z",
+      "updatedAt": "2026-10-22T08:30:30.485Z"
+    }
+  ]
+}
