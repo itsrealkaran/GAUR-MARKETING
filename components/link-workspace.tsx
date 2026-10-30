@@ -1,8 +1,18 @@
 "use client"
 
 import Link from "next/link"
-import { ArrowLeft, ArrowUpRight, Copy, Link2, RefreshCw, Search, ScrollText } from "lucide-react"
+import { ArrowLeft, ArrowUpRight, Copy, Link2, Pencil, RefreshCw, Search, ScrollText, Trash2 } from "lucide-react"
 import { FormEvent, ReactNode, useEffect, useRef, useState } from "react"
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 type Mode = "forwarder" | "redirect"
 type LinkRecord = { code: string; target_url: string; visits: number; created_at?: string }
@@ -102,6 +112,29 @@ export function LinkWorkspace() {
     }
   }
 
+  const updateLink = (updated: LinkRecord) => {
+    const previous = links.find((link) => link.code === updated.code)
+    setLinks((current) => current.map((link) => link.code === updated.code ? updated : link))
+    setResult((current) => current?.code === updated.code ? updated : current)
+    setOverview((current) => current ? {
+      ...current,
+      totalVisits: current.totalVisits - (previous?.visits || updated.visits) + updated.visits,
+      topLinks: current.topLinks.map((link) => link.code === updated.code ? updated : link),
+    } : current)
+  }
+
+  const deleteLink = (code: string) => {
+    const removed = links.find((link) => link.code === code)
+    setLinks((current) => current.filter((link) => link.code !== code))
+    setResult((current) => current?.code === code ? null : current)
+    setOverview((current) => current ? {
+      ...current,
+      totalLinks: Math.max(0, current.totalLinks - 1),
+      totalVisits: Math.max(0, current.totalVisits - (removed?.visits || 0)),
+      topLinks: current.topLinks.filter((link) => link.code !== code),
+    } : current)
+  }
+
   const trackedUrl = result ? `${origin}/${encodeURIComponent(result.code)}` : ""
   const directUrl = result ? `${origin}/link?url=${encodeURIComponent(result.target_url)}` : ""
   const directUrlLabel = result ? `${origin}/link?url=${result.target_url}` : ""
@@ -168,7 +201,7 @@ export function LinkWorkspace() {
 
         {result && <section className="border-t border-[#202522]/15 py-10"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#bd5b32]">Latest link</p><h2 className="mt-2 text-3xl font-semibold tracking-tight">{result.visits.toLocaleString()} visits recorded</h2></div><button onClick={refresh} className="inline-flex items-center gap-2 text-sm font-semibold hover:text-[#bd5b32]"><RefreshCw size={15} /> Refresh count</button></div><div className="mt-7 grid gap-4 md:grid-cols-3"><Result label="Tracked URL" value={trackedUrl} onCopy={() => copy(trackedUrl)} /><Result label="Direct forwarder" value={directUrl} displayValue={directUrlLabel} onCopy={() => copy(directUrl)} /><div className="border border-[#202522]/15 bg-[#fbfaf6] p-5"><p className="text-xs uppercase tracking-[0.16em] text-[#202522]/45">Destination</p><p className="mt-4 break-all text-sm leading-6">{result.target_url}</p><p className="mt-4 text-xs uppercase tracking-[0.16em] text-[#202522]/45">Live visits are shown above</p></div></div></section>}
 
-        <section className="border-t border-[#202522]/15 py-10"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#bd5b32]">Link ledger</p><h2 className="mt-2 text-3xl font-semibold tracking-tight">Recent links and visits</h2></div><button onClick={() => loadLinks(1)} className="inline-flex items-center gap-2 text-sm font-semibold hover:text-[#bd5b32]"><RefreshCw size={15} /> Refresh</button></div><form onSubmit={submitSearch} className="mt-6 flex max-w-2xl border border-[#202522]/20 bg-[#fbfaf6] focus-within:border-[#bd5b32]"><Search className="m-3 shrink-0 text-[#202522]/45" size={18} /><input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search by destination or link code" aria-label="Search links and visit counts" className="min-w-0 flex-1 bg-transparent py-3 pr-3 text-sm outline-none" /><button type="submit" className="border-l border-[#202522]/15 px-4 text-sm font-semibold hover:bg-[#202522] hover:text-[#f4f1ea]">Search</button></form>{searchTerm && <p className="mt-3 text-xs text-[#202522]/50">Showing results for “{searchTerm}”.</p>}<div className="mt-6 divide-y divide-[#202522]/15 border-y border-[#202522]/15">{links.map((link) => <LedgerRow key={link.code} link={link} origin={origin} />)}{!links.length && !loadingMore && <p className="py-8 text-sm text-[#202522]/55">No tracked links match this search.</p>}</div><div ref={sentinel} className="flex flex-col items-center gap-3 py-8 text-sm text-[#202522]/50">{loadingMore ? "Loading more links..." : hasMore ? <><span>Scroll for more</span><button type="button" onClick={() => loadLinks(pageRef.current + 1)} className="border border-[#202522]/20 px-4 py-2 font-semibold text-[#202522] hover:border-[#bd5b32]">Load more</button></> : "All matching links loaded"}</div></section>
+        <section className="border-t border-[#202522]/15 py-10"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#bd5b32]">Link ledger</p><h2 className="mt-2 text-3xl font-semibold tracking-tight">Recent links and visits</h2></div><button onClick={() => loadLinks(1)} className="inline-flex items-center gap-2 text-sm font-semibold hover:text-[#bd5b32]"><RefreshCw size={15} /> Refresh</button></div><form onSubmit={submitSearch} className="mt-6 flex max-w-2xl border border-[#202522]/20 bg-[#fbfaf6] focus-within:border-[#bd5b32]"><Search className="m-3 shrink-0 text-[#202522]/45" size={18} /><input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search by destination or link code" aria-label="Search links and visit counts" className="min-w-0 flex-1 bg-transparent py-3 pr-3 text-sm outline-none" /><button type="submit" className="border-l border-[#202522]/15 px-4 text-sm font-semibold hover:bg-[#202522] hover:text-[#f4f1ea]">Search</button></form>{searchTerm && <p className="mt-3 text-xs text-[#202522]/50">Showing results for “{searchTerm}”.</p>}<div className="mt-6 divide-y divide-[#202522]/15 border-y border-[#202522]/15">{links.map((link) => <LedgerRow key={link.code} link={link} origin={origin} onUpdate={updateLink} onDelete={deleteLink} />)}{!links.length && !loadingMore && <p className="py-8 text-sm text-[#202522]/55">No tracked links match this search.</p>}</div><div ref={sentinel} className="flex flex-col items-center gap-3 py-8 text-sm text-[#202522]/50">{loadingMore ? "Loading more links..." : hasMore ? <><span>Scroll for more</span><button type="button" onClick={() => loadLinks(pageRef.current + 1)} className="border border-[#202522]/20 px-4 py-2 font-semibold text-[#202522] hover:border-[#bd5b32]">Load more</button></> : "All matching links loaded"}</div></section>
       </div>
     </main>
   )
@@ -177,7 +210,12 @@ export function LinkWorkspace() {
 function ModeButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: ReactNode; label: string }) { return <button type="button" onClick={onClick} className={`flex items-center justify-center gap-2 border-b-2 pb-3 text-sm font-semibold ${active ? "border-[#bd5b32]" : "border-transparent text-[#202522]/45"}`}>{icon}{label}</button> }
 function Info({ title, text }: { title: string; text: string }) { return <div><dt className="font-semibold">{title}</dt><dd className="mt-1 leading-6 text-[#202522]/55">{text}</dd></div> }
 function Result({ label, value, displayValue = value, onCopy }: { label: string; value: string; displayValue?: string; onCopy: () => void }) { return <div className="border border-[#202522]/15 bg-[#fbfaf6] p-5"><p className="text-xs uppercase tracking-[0.16em] text-[#202522]/45">{label}</p><p className="mt-4 break-all text-sm leading-6">{displayValue}</p><button type="button" onClick={onCopy} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold hover:text-[#bd5b32]"><Copy size={14} /> Copy</button></div> }
-function LedgerRow({ link, origin }: { link: LinkRecord; origin: string }) {
+function LedgerRow({ link, origin, onUpdate, onDelete }: { link: LinkRecord; origin: string; onUpdate: (link: LinkRecord) => void; onDelete: (code: string) => void }) {
+  const [editOpen, setEditOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [destination, setDestination] = useState(link.target_url)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState("")
   const isForwarder = link.code.startsWith("link_")
   const trackedHref = isForwarder
     ? `${origin}/link?url=${encodeURIComponent(link.target_url)}`
@@ -187,6 +225,43 @@ function LedgerRow({ link, origin }: { link: LinkRecord; origin: string }) {
     : `${origin}/${link.code}`
   const type = isForwarder ? "Forwarder" : "Code redirect"
 
+  const saveDestination = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setBusy(true)
+    setError("")
+    try {
+      const response = await fetch(`/api/links/${encodeURIComponent(link.code)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetUrl: destination }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || "Unable to update destination")
+      onUpdate(data)
+      setEditOpen(false)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to update destination")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const removeLink = async () => {
+    setBusy(true)
+    setError("")
+    try {
+      const response = await fetch(`/api/links/${encodeURIComponent(link.code)}`, { method: "DELETE" })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || "Unable to delete link")
+      onDelete(link.code)
+      setDeleteOpen(false)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to delete link")
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="flex flex-col gap-3 py-5 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0 flex-1">
@@ -195,11 +270,52 @@ function LedgerRow({ link, origin }: { link: LinkRecord; origin: string }) {
         </div>
         <a href={link.target_url} target="_blank" rel="noopener noreferrer" title={link.target_url} className="mt-2 block truncate text-sm font-semibold hover:text-[#bd5b32]">{link.target_url}</a>
         <a href={trackedHref} target="_blank" rel="noopener noreferrer" title={trackedLabel} className="mt-1 block truncate text-sm text-[#202522]/50 hover:text-[#bd5b32]">{trackedLabel}</a>
+        <div className="mt-2 flex gap-4">
+          <button type="button" onClick={() => { setDestination(link.target_url); setError(""); setEditOpen(true) }} className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#202522]/55 hover:text-[#bd5b32]">
+            <Pencil size={13} /> Edit destination
+          </button>
+          <button type="button" onClick={() => { setError(""); setDeleteOpen(true) }} className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#202522]/55 hover:text-red-700">
+            <Trash2 size={13} /> Delete
+          </button>
+        </div>
       </div>
       <div className="shrink-0">
         <p className="text-xs uppercase tracking-[0.16em] text-[#202522]/45">Visits</p>
         <Link href={`/stats/${encodeURIComponent(link.code)}`} aria-label={`View analytics for ${link.code}`} className="mt-1 inline-flex text-2xl font-semibold hover:text-[#bd5b32] hover:underline">{link.visits.toLocaleString()}</Link>
       </div>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit destination</DialogTitle>
+            <DialogDescription>The tracked URL and visit history stay the same.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={saveDestination} className="space-y-4">
+            <label className="block text-sm font-semibold">Destination URL
+              <input required type="url" value={destination} onChange={(event) => setDestination(event.target.value)} className="mt-2 w-full border border-[#202522]/20 bg-transparent px-3 py-3 text-sm outline-none focus:border-[#bd5b32]" />
+            </label>
+            {error && <p role="alert" className="text-sm text-[#bd5b32]">{error}</p>}
+            <DialogFooter>
+              <button type="button" onClick={() => setEditOpen(false)} className="border border-[#202522]/20 px-4 py-2 text-sm font-semibold" disabled={busy}>Cancel</button>
+              <button type="submit" className="bg-[#202522] px-4 py-2 text-sm font-semibold text-[#f4f1ea] hover:bg-[#bd5b32] disabled:opacity-50" disabled={busy}>{busy ? "Saving..." : "Save destination"}</button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this tracked link?</AlertDialogTitle>
+            <AlertDialogDescription>This removes the redirect and its stored visit analytics. This action cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          {error && <p role="alert" className="text-sm text-[#bd5b32]">{error}</p>}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <button type="button" onClick={removeLink} className="bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50" disabled={busy}>{busy ? "Deleting..." : "Delete link"}</button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
