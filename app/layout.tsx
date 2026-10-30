@@ -18,16 +18,16 @@ const poppins = Poppins({
 export const metadata: Metadata = {
   title: "GAUR LINKS – Dynamic Redirector, Smart Redirect & UTM Builder",
   description:
-    "GAUR LINKS is a powerful smart link generator that lets users create WhatsApp direct chat links, dynamic redirects, UTM campaign URLs, QR codes, and shareable smart links instantly.",
+    "GAUR LINKS creates tracked redirect links, UTM campaign URLs, QR codes, and shareable smart links.",
   keywords:
-    "GAUR LINKS, Dynamic Redirector, Smart Redirect, WhatsApp Link Generator, UTM Builder, QR Code Generator, Smart Links, URL Shortener, Marketing Tools",
+    "GAUR LINKS, Dynamic Redirector, Smart Redirect, UTM Builder, QR Code Generator, Smart Links, URL Shortener, Marketing Tools",
   icons: {
     icon: "/icon.svg",
     apple: "/icon.svg",
   },
   openGraph: {
     title: "GAUR LINKS – Dynamic Redirector & Smart Link Generator",
-    description: "Generate WhatsApp links, smart redirects, UTM URLs, and QR codes instantly.",
+    description: "Generate tracked smart redirects, UTM URLs, and QR codes instantly.",
     siteName: "GAUR LINKS",
     url: "https://gaurmarketing.com",
     type: "website",
@@ -35,7 +35,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "GAUR LINKS – Dynamic Redirector",
-    description: "Build WhatsApp links, Smart Redirects, and UTM Campaign URLs in seconds.",
+    description: "Build smart redirects and UTM campaign URLs in seconds.",
   },
   applicationName: "GAUR LINKS",
   generator: "Next.js"
@@ -47,7 +47,7 @@ const jsonLd = {
   "name": "GAUR LINKS",
   "alternateName": "GAUR LINKS Dynamic Redirector",
   "url": "https://gaurmarketing.com",
-  "description": "GAUR LINKS is a powerful smart link generator that lets users create WhatsApp direct chat links, dynamic redirects, UTM campaign URLs, QR codes, and shareable smart links instantly.",
+  "description": "GAUR LINKS creates tracked redirect links, UTM campaign URLs, QR codes, and shareable smart links.",
   "applicationCategory": "BusinessApplication",
   "operatingSystem": "All",
   "offers": {

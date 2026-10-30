@@ -33,7 +33,7 @@ export function proxy(request: NextRequest) {
 
   const protectedPaths = ["/about", "/services", "/contact"]
 
-  if (pathname === "/generate" || pathname.startsWith("/api/links")) {
+  if (pathname === "/generate" || pathname === "/stats" || pathname.startsWith("/stats/") || pathname.startsWith("/api/links")) {
     const payload = token ? verifyJwtEdge(token) : null
     const isVerified = payload && (payload.role === "admin" || payload.paymentStatus === "verified")
 

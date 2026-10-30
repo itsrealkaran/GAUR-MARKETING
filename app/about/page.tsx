@@ -57,10 +57,10 @@ export default function AboutPage() {
                 Our Story
               </h2>
               <p className="text-muted-foreground leading-relaxed mb-4">
-                GAUR LINKS was created to solve a common digital marketing problem: standard URL shorteners are often heavy, require accounts, track user data, and lack unified utilities for WhatsApp linking or campaign tags.
+                GAUR LINKS was created to solve a common digital marketing problem: standard URL shorteners are often heavy, require accounts, and lack unified utilities for tracked redirects and campaign tags.
               </p>
               <p className="text-muted-foreground leading-relaxed mb-4">
-                We designed a purely client-side, stateless workspace that lets you create direct WhatsApp links, dynamic secure redirects, and UTM builder flows in seconds, with instant QR code generation built right in.
+                We designed a focused workspace for tracked secure redirects and UTM builder flows, with instant QR code generation built in.
               </p>
               <p className="text-muted-foreground leading-relaxed">
                 Today, GAUR LINKS serves as a crucial day-to-day tool for digital marketers, growth hackers, and content creators looking for a fast, reliable utility hub.

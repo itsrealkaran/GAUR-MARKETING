@@ -7,7 +7,7 @@ import { Footer } from "@/components/footer"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import Link from "next/link"
-import { MessageSquare, Link2, Globe, QrCode, CheckCircle2 } from "lucide-react"
+import { Link2, Globe, QrCode, CheckCircle2 } from "lucide-react"
 
 export default function ServicesPage() {
   const router = useRouter();
@@ -33,18 +33,6 @@ export default function ServicesPage() {
   }
 
   const services = [
-    {
-      icon: <MessageSquare className="w-12 h-12 text-accent" />,
-      title: "WhatsApp Direct Chat Links",
-      description:
-        "Generate direct click-to-chat links for any phone number with pre-filled custom message templates so customers can reach you instantly.",
-      features: [
-        "Pre-filled text messages",
-        "Clean mobile-ready format",
-        "Zero registration required",
-        "Instant WhatsApp launch",
-      ],
-    },
     {
       icon: <Link2 className="w-12 h-12 text-accent" />,
       title: "Smart Redirect Links",
@@ -140,7 +128,7 @@ export default function ServicesPage() {
             Ready to Build a Link?
           </h2>
           <p className="text-lg md:text-xl text-white/90 mb-8 max-w-2xl mx-auto">
-            Start creating your custom WhatsApp links, redirects, and campaign URLs right now.
+            Start creating tracked redirects and campaign URLs right now.
           </p>
           <Button asChild size="lg" className="bg-accent hover:bg-accent/90 text-white text-lg px-8 py-6">
             <Link href="/">Launch Link Workspace</Link>

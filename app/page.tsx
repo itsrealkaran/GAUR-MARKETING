@@ -10,7 +10,6 @@ import {
   History,
   Sparkles,
   ExternalLink,
-  MessageSquare,
   Zap,
   Globe,
   Download,
@@ -29,7 +28,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Toaster } from "@/components/ui/sonner"
 import { toast } from "sonner"
@@ -38,7 +36,7 @@ import { Footer } from "@/components/footer"
 
 interface HistoryItem {
   id: string
-  type: "whatsapp" | "redirect" | "utm"
+  type: "redirect" | "utm"
   title: string
   originalUrl: string
   generatedUrl: string
@@ -82,10 +80,6 @@ function LegacyHome() {
   const [loginEmail, setLoginEmail] = useState("")
   const [loginPassword, setLoginPassword] = useState("")
   const [loginLoading, setLoginLoading] = useState(false)
-
-  // State for WhatsApp Generator
-  const [waPhone, setWaPhone] = useState("")
-  const [waText, setWaText] = useState("")
 
   // State for Smart Redirect Linker
   const [redirectTarget, setRedirectTarget] = useState("")
@@ -175,7 +169,7 @@ function LegacyHome() {
       throw new Error(data.error || "Unable to create tracked link")
     }
 
-    const generatedUrl = `${origin}/r/${encodeURIComponent(data.code)}`
+    const generatedUrl = `${origin}/${encodeURIComponent(data.code)}`
     setActiveStatsUrl(`${origin}/stats/${encodeURIComponent(data.code)}`)
     return generatedUrl
   }
@@ -329,40 +323,6 @@ function LegacyHome() {
     }
   }
 
-  // Generate WhatsApp Link
-  const handleGenerateWhatsApp = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!waPhone) {
-      toast.error("Please enter a phone number")
-      return
-    }
-
-    const cleanedPhone = waPhone.replace(/\D/g, "")
-    if (cleanedPhone.length < 7) {
-      toast.error("Please enter a valid phone number with country code")
-      return
-    }
-
-    let url = `${origin}/${cleanedPhone}`
-    if (waText) {
-      url += `?text=${encodeURIComponent(waText)}`
-    }
-
-    setActiveLink(url)
-
-    // Add to history
-    const newItem: HistoryItem = {
-      id: Date.now().toString(),
-      type: "whatsapp",
-      title: `WhatsApp: +${cleanedPhone}`,
-      originalUrl: `https://wa.me/${cleanedPhone}${waText ? `?text=${encodeURIComponent(waText)}` : ""}`,
-      generatedUrl: url,
-      createdAt: new Date().toLocaleString(),
-    }
-    saveHistory([newItem, ...history])
-    toast.success("WhatsApp Link Generated!")
-  }
-
   // Generate Smart Redirect Link
   const handleGenerateRedirect = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -398,7 +358,7 @@ function LegacyHome() {
         type: "redirect",
         title:
           alias && isPremium
-            ? `Custom Redirect: /r/${alias}`
+            ? `Custom Redirect: /${alias}`
             : `Redirect to: ${new URL(targetUrl).hostname}`,
         originalUrl: targetUrl,
         generatedUrl,
@@ -448,7 +408,7 @@ function LegacyHome() {
         type: "utm",
         title:
           alias && isPremium
-            ? `Custom UTM: /r/${alias}`
+            ? `Custom UTM: /${alias}`
             : `UTM Campaign for: ${urlObj.hostname}`,
         originalUrl: finalUrl,
         generatedUrl: generatedUrl,
@@ -894,8 +854,7 @@ function LegacyHome() {
                     GAUR DYNAMIC LINKS
                   </h1>
                   <p className="text-neutral-400 text-lg md:text-xl max-w-2xl mx-auto leading-relaxed">
-                    Generate stateless redirection links, WhatsApp direct chat URLs, and campaign UTM codes instantly with
-                    built-in QR code sharing.
+                    Generate tracked redirection links and campaign UTM codes instantly with built-in QR code sharing.
                   </p>
                 </div>
 
@@ -913,15 +872,8 @@ function LegacyHome() {
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="pt-6">
-                        <Tabs defaultValue="whatsapp" className="w-full">
-                          <TabsList className="grid w-full grid-cols-3 bg-neutral-950/60 p-1 border border-neutral-800 rounded-lg mb-6">
-                            <TabsTrigger
-                              value="whatsapp"
-                              className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white text-neutral-400 font-medium py-2 rounded-md transition-all duration-300 cursor-pointer"
-                            >
-                              <MessageSquare className="w-4 h-4 mr-2 inline" />
-                              WhatsApp
-                            </TabsTrigger>
+                        <Tabs defaultValue="redirect" className="w-full">
+                          <TabsList className="grid w-full grid-cols-2 bg-neutral-950/60 p-1 border border-neutral-800 rounded-lg mb-6">
                             <TabsTrigger
                               value="redirect"
                               className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white text-neutral-400 font-medium py-2 rounded-md transition-all duration-300 cursor-pointer"
@@ -937,50 +889,6 @@ function LegacyHome() {
                               UTM Builder
                             </TabsTrigger>
                           </TabsList>
-
-                          {/* WhatsApp Form */}
-                          <TabsContent value="whatsapp" className="mt-0">
-                            <form onSubmit={handleGenerateWhatsApp} className="space-y-4">
-                              <div className="space-y-2">
-                                <Label htmlFor="wa-phone" className="text-sm font-semibold text-neutral-300">
-                                  Phone Number (with Country Code)
-                                </Label>
-                                <div className="relative">
-                                  <Input
-                                    id="wa-phone"
-                                    placeholder="e.g. 919999999999 (India code 91)"
-                                    value={waPhone}
-                                    onChange={(e) => setWaPhone(e.target.value)}
-                                    className="bg-neutral-950/80 border-neutral-800 text-white placeholder-neutral-500 py-6 pl-4 focus:ring-indigo-500 focus:border-indigo-500 rounded-lg"
-                                  />
-                                </div>
-                                <p className="text-xs text-neutral-500">
-                                  Do not include +, spaces, or dashes. Format: [Country Code][Number]
-                                </p>
-                              </div>
-
-                              <div className="space-y-2">
-                                <Label htmlFor="wa-text" className="text-sm font-semibold text-neutral-300">
-                                  Default Chat Message (Optional)
-                                </Label>
-                                <Textarea
-                                  id="wa-text"
-                                  rows={4}
-                                  placeholder="Type the message you want visitors to automatically send you..."
-                                  value={waText}
-                                  onChange={(e) => setWaText(e.target.value)}
-                                  className="bg-neutral-950/80 border-neutral-800 text-white placeholder-neutral-500 focus:ring-indigo-500 focus:border-indigo-500 rounded-lg p-4"
-                                />
-                              </div>
-
-                              <Button
-                                type="submit"
-                                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-6 rounded-lg font-bold transition-all duration-300 shadow-lg shadow-indigo-600/20"
-                              >
-                                Generate WhatsApp Link
-                              </Button>
-                            </form>
-                          </TabsContent>
 
                           {/* Smart Redirect Form */}
                           <TabsContent value="redirect" className="mt-0">
@@ -1326,11 +1234,7 @@ function LegacyHome() {
                                 <div className="flex items-center gap-2">
                                   <span
                                     className={`px-2 py-0.5 rounded text-xs font-semibold ${
-                                      item.type === "whatsapp"
-                                        ? "bg-green-500/10 text-green-400"
-                                        : item.type === "utm"
-                                        ? "bg-blue-500/10 text-blue-400"
-                                        : "bg-purple-500/10 text-purple-400"
+                                      item.type === "utm" ? "bg-blue-500/10 text-blue-400" : "bg-purple-500/10 text-purple-400"
                                     }`}
                                   >
                                     {item.type.toUpperCase()}

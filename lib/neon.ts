@@ -1,9 +1,11 @@
 import crypto from "crypto"
+import { isIP } from "node:net"
 import { neon } from "@neondatabase/serverless"
 
 const databaseUrl = process.env.DATABASE_URL_POOLED || process.env.DATABASE_URL
 
 export const sql = neon(databaseUrl || "")
+let linksSchemaPromise: Promise<void> | null = null
 
 export function normalizeTargetUrl(rawUrl: string) {
   const trimmed = rawUrl.trim()
@@ -53,32 +55,41 @@ export async function ensureLinksTable() {
     throw new Error("DATABASE_URL_POOLED or DATABASE_URL is not configured")
   }
 
-  await sql`
-    CREATE TABLE IF NOT EXISTS links (
-      code TEXT PRIMARY KEY,
-      target_url TEXT NOT NULL,
-      visits INTEGER NOT NULL DEFAULT 0,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `
+  if (!linksSchemaPromise) {
+    linksSchemaPromise = (async () => {
+      await sql`
+        CREATE TABLE IF NOT EXISTS links (
+          code TEXT PRIMARY KEY,
+          target_url TEXT NOT NULL,
+          visits INTEGER NOT NULL DEFAULT 0,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `
 
-  await sql`
-    CREATE TABLE IF NOT EXISTS link_visit_events (
-      id BIGSERIAL PRIMARY KEY,
-      code TEXT NOT NULL REFERENCES links(code) ON DELETE CASCADE,
-      visitor_id TEXT NOT NULL,
-      country TEXT NOT NULL DEFAULT '',
-      city TEXT NOT NULL DEFAULT '',
-      device TEXT NOT NULL DEFAULT '',
-      operating_system TEXT NOT NULL DEFAULT '',
-      browser TEXT NOT NULL DEFAULT '',
-      language TEXT NOT NULL DEFAULT '',
-      referrer TEXT NOT NULL DEFAULT '',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `
+      await sql`
+        CREATE TABLE IF NOT EXISTS link_visit_events (
+          id BIGSERIAL PRIMARY KEY,
+          code TEXT NOT NULL REFERENCES links(code) ON DELETE CASCADE,
+          visitor_id TEXT NOT NULL,
+          country TEXT NOT NULL DEFAULT '',
+          city TEXT NOT NULL DEFAULT '',
+          device TEXT NOT NULL DEFAULT '',
+          operating_system TEXT NOT NULL DEFAULT '',
+          browser TEXT NOT NULL DEFAULT '',
+          language TEXT NOT NULL DEFAULT '',
+          referrer TEXT NOT NULL DEFAULT '',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `
 
-  await sql`CREATE INDEX IF NOT EXISTS link_visit_events_code_created_idx ON link_visit_events (code, created_at DESC)`
+      await sql`CREATE INDEX IF NOT EXISTS link_visit_events_code_created_idx ON link_visit_events (code, created_at DESC)`
+    })().catch((error) => {
+      linksSchemaPromise = null
+      throw error
+    })
+  }
+
+  await linksSchemaPromise
 }
 
 export async function findOrCreateLink(targetUrl: string, alias?: string) {
@@ -183,6 +194,123 @@ function referrerFromHeader(value: string) {
   }
 }
 
+type VisitorPlace = { country: string; city: string; region: string }
+type CachedPlace = { value: VisitorPlace | null; expiresAt: number }
+
+const placeCache = new Map<string, CachedPlace>()
+const pendingPlaceLookups = new Map<string, Promise<VisitorPlace | null>>()
+const PLACE_CACHE_LIMIT = 2000
+
+function visitorIpFromHeaders(headers: Headers) {
+  const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim() || ""
+  return (headers.get("cf-connecting-ip") || headers.get("x-real-ip") || forwarded).trim().slice(0, 64)
+}
+
+function isPublicIp(ip: string) {
+  const mappedIpv4 = ip.match(/^::ffff:(\d+(?:\.\d+){3})$/i)?.[1]
+  if (mappedIpv4) return isPublicIp(mappedIpv4)
+
+  const version = isIP(ip)
+  if (version === 4) {
+    const [first, second, third] = ip.split(".").map(Number)
+    return !(
+      first === 0 || first === 10 || first === 127 ||
+      (first === 100 && second >= 64 && second <= 127) ||
+      (first === 169 && second === 254) ||
+      (first === 172 && second >= 16 && second <= 31) ||
+      (first === 192 && second === 168) ||
+      (first === 192 && second === 0 && third === 0) ||
+      (first === 192 && second === 0 && third === 2) ||
+      (first === 198 && (second === 18 || second === 19 || (second === 51 && third === 100))) ||
+      (first === 203 && second === 0 && third === 113) ||
+      first >= 224
+    )
+  }
+  if (version === 6) {
+    const normalized = ip.toLowerCase()
+    return normalized !== "::" && normalized !== "::1" &&
+      !normalized.startsWith("fc") && !normalized.startsWith("fd") &&
+      !normalized.startsWith("fe8") && !normalized.startsWith("fe9") &&
+      !normalized.startsWith("fea") && !normalized.startsWith("feb") &&
+      !normalized.startsWith("ff") && !normalized.startsWith("2001:db8:")
+  }
+  return false
+}
+
+function normalizePlace(data: { success?: boolean; country?: string; country_code?: string; region?: string; city?: string }) {
+  if (data.success === false) return null
+  const clean = (value: string) => value.trim().replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 80)
+  const country = clean(data.country || countryName(data.country_code || ""))
+  const city = clean(data.city || "")
+  const region = clean(data.region || "")
+  return country || city || region ? { country, city, region } : null
+}
+
+async function fetchPlace(url: string) {
+  try {
+    const response = await fetch(url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(1000),
+      headers: { accept: "application/json" },
+    })
+    if (!response.ok) return null
+    return normalizePlace(await response.json())
+  } catch {
+    return null
+  }
+}
+
+async function queryPlace(ip: string): Promise<VisitorPlace | null> {
+  const encodedIp = encodeURIComponent(ip)
+  const providers = [
+    `https://ipwho.is/${encodedIp}`,
+    `https://get.geojs.io/v1/ip/geo/${encodedIp}.json`,
+  ]
+
+  for (const provider of providers) {
+    const place = await fetchPlace(provider)
+    if (place) return place
+  }
+  return null
+}
+
+function pooledPlaceLookup(ip: string) {
+  const cached = placeCache.get(ip)
+  if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.value)
+
+  const pending = pendingPlaceLookups.get(ip)
+  if (pending) return pending
+
+  const lookup = queryPlace(ip).then((place) => {
+    if (placeCache.size >= PLACE_CACHE_LIMIT) {
+      const oldestKey = placeCache.keys().next().value
+      if (oldestKey) placeCache.delete(oldestKey)
+    }
+    placeCache.set(ip, { value: place, expiresAt: Date.now() + (place ? 6 * 60 * 60 * 1000 : 60 * 1000) })
+    return place
+  }).finally(() => pendingPlaceLookups.delete(ip))
+
+  pendingPlaceLookups.set(ip, lookup)
+  return lookup
+}
+
+async function locationFromHeaders(headers: Headers) {
+  const country = countryName(headerValue(headers, ["x-vercel-ip-country", "cf-ipcountry", "cloudfront-viewer-country", "x-nf-geo-country"]))
+  const city = headerValue(headers, ["x-vercel-ip-city", "cf-ipcity", "x-nf-geo-city"]).slice(0, 80)
+  const region = headerValue(headers, ["x-vercel-ip-country-region", "cf-region", "x-nf-geo-region"]).slice(0, 80)
+
+  if (country && city) return { country, city: [city, region].filter(Boolean).join(", ") }
+
+  const ip = visitorIpFromHeaders(headers)
+  if (!isPublicIp(ip)) return { country, city: [city, region].filter(Boolean).join(", ") }
+
+  const place = await pooledPlaceLookup(ip)
+  return {
+    country: country || place?.country || "",
+    city: [city || place?.city || "", region || place?.region || ""].filter(Boolean).join(", "),
+  }
+}
+
 export async function trackLinkVisit(code: string, headers: Headers, visitorId: string) {
   const rows = (await sql`
     UPDATE links
@@ -194,10 +322,7 @@ export async function trackLinkVisit(code: string, headers: Headers, visitorId: 
   if (!link) return undefined
 
   const agent = headers.get("user-agent") || ""
-  const countryCode = headerValue(headers, ["x-vercel-ip-country", "cf-ipcountry", "cloudfront-viewer-country", "x-nf-geo-country"])
-  const country = countryName(countryCode)
-  const city = headerValue(headers, ["x-vercel-ip-city", "cf-ipcity", "x-nf-geo-city"]).slice(0, 80)
-  const region = headerValue(headers, ["x-vercel-ip-country-region", "cf-region", "x-nf-geo-region"]).slice(0, 80)
+  const location = await locationFromHeaders(headers)
 
   try {
     await sql`
@@ -205,8 +330,8 @@ export async function trackLinkVisit(code: string, headers: Headers, visitorId: 
       VALUES (
         ${code},
         ${visitorId},
-        ${country},
-        ${[city, region].filter(Boolean).join(", ")},
+        ${location.country},
+        ${location.city},
         ${deviceFromAgent(agent)},
         ${operatingSystemFromAgent(agent)},
         ${browserFromAgent(agent)},
@@ -221,58 +346,69 @@ export async function trackLinkVisit(code: string, headers: Headers, visitorId: 
   return link
 }
 
-export async function getLinkAnalytics(codes: string[]) {
-  if (!codes.length) return []
-
-  return sql`
-    WITH page_codes AS (
-      SELECT json_array_elements_text(${JSON.stringify(codes)}::json) AS code
+export async function getLinkReport(code: string, from: Date, to: Date) {
+  const rows = await sql`
+    WITH target_link AS (
+      SELECT code, target_url, visits FROM links WHERE code = ${code}
+    ), filtered_events AS (
+      SELECT * FROM link_visit_events
+      WHERE code = ${code} AND created_at >= ${from} AND created_at < ${to}
     )
-    SELECT page_codes.code,
-      (SELECT COUNT(*)::int FROM link_visit_events e WHERE e.code = page_codes.code) AS tracked_visits,
-      (SELECT COUNT(DISTINCT visitor_id)::int FROM link_visit_events e WHERE e.code = page_codes.code) AS unique_visitors,
-      (SELECT COALESCE(json_agg(json_build_object('label', label, 'count', visits) ORDER BY visits DESC), '[]'::json)
+    SELECT target_link.code, target_link.target_url, target_link.visits,
+      (SELECT COUNT(*)::int FROM filtered_events) AS tracked_visits,
+      (SELECT COUNT(DISTINCT visitor_id)::int FROM filtered_events) AS unique_visitors,
+      (SELECT COALESCE(json_agg(json_build_object('label', label, 'count', total) ORDER BY total DESC), '[]'::json)
         FROM (
-          SELECT COALESCE(NULLIF(country, ''), 'Unknown') AS label, COUNT(*)::int AS visits
-          FROM link_visit_events e WHERE e.code = page_codes.code
-          GROUP BY 1 ORDER BY visits DESC LIMIT 5
+          SELECT COALESCE(NULLIF(country, ''), 'Unknown') AS label, COUNT(*)::int AS total
+          FROM filtered_events GROUP BY 1 ORDER BY total DESC LIMIT 5
         ) AS items) AS countries,
-      (SELECT COALESCE(json_agg(json_build_object('label', label, 'count', visits) ORDER BY visits DESC), '[]'::json)
+      (SELECT COALESCE(json_agg(json_build_object('label', label, 'count', total) ORDER BY total DESC), '[]'::json)
         FROM (
-          SELECT COALESCE(NULLIF(city, ''), 'Unknown') AS label, COUNT(*)::int AS visits
-          FROM link_visit_events e WHERE e.code = page_codes.code
-          GROUP BY 1 ORDER BY visits DESC LIMIT 5
+          SELECT COALESCE(NULLIF(city, ''), 'Unknown') AS label, COUNT(*)::int AS total
+          FROM filtered_events GROUP BY 1 ORDER BY total DESC LIMIT 5
         ) AS items) AS cities,
-      (SELECT COALESCE(json_agg(json_build_object('label', label, 'count', visits) ORDER BY visits DESC), '[]'::json)
+      (SELECT COALESCE(json_agg(json_build_object('label', label, 'count', total) ORDER BY total DESC), '[]'::json)
         FROM (
-          SELECT device AS label, COUNT(*)::int AS visits
-          FROM link_visit_events e WHERE e.code = page_codes.code
-          GROUP BY device ORDER BY visits DESC LIMIT 5
+          SELECT device AS label, COUNT(*)::int AS total
+          FROM filtered_events GROUP BY device ORDER BY total DESC LIMIT 5
         ) AS items) AS devices,
-      (SELECT COALESCE(json_agg(json_build_object('label', label, 'count', visits) ORDER BY visits DESC), '[]'::json)
+      (SELECT COALESCE(json_agg(json_build_object('label', label, 'count', total) ORDER BY total DESC), '[]'::json)
         FROM (
-          SELECT operating_system AS label, COUNT(*)::int AS visits
-          FROM link_visit_events e WHERE e.code = page_codes.code
-          GROUP BY operating_system ORDER BY visits DESC LIMIT 5
+          SELECT operating_system AS label, COUNT(*)::int AS total
+          FROM filtered_events GROUP BY operating_system ORDER BY total DESC LIMIT 5
         ) AS items) AS operating_systems,
-      (SELECT COALESCE(json_agg(json_build_object('label', label, 'count', visits) ORDER BY visits DESC), '[]'::json)
+      (SELECT COALESCE(json_agg(json_build_object('label', label, 'count', total) ORDER BY total DESC), '[]'::json)
         FROM (
-          SELECT browser AS label, COUNT(*)::int AS visits
-          FROM link_visit_events e WHERE e.code = page_codes.code
-          GROUP BY browser ORDER BY visits DESC LIMIT 5
+          SELECT browser AS label, COUNT(*)::int AS total
+          FROM filtered_events GROUP BY browser ORDER BY total DESC LIMIT 5
         ) AS items) AS browsers,
-      (SELECT COALESCE(json_agg(json_build_object('label', label, 'count', visits) ORDER BY visits DESC), '[]'::json)
+      (SELECT COALESCE(json_agg(json_build_object('label', label, 'count', total) ORDER BY total DESC), '[]'::json)
         FROM (
-          SELECT language AS label, COUNT(*)::int AS visits
-          FROM link_visit_events e WHERE e.code = page_codes.code
-          GROUP BY language ORDER BY visits DESC LIMIT 5
+          SELECT language AS label, COUNT(*)::int AS total
+          FROM filtered_events GROUP BY language ORDER BY total DESC LIMIT 5
         ) AS items) AS languages,
-      (SELECT COALESCE(json_agg(json_build_object('label', label, 'count', visits) ORDER BY visits DESC), '[]'::json)
+      (SELECT COALESCE(json_agg(json_build_object('label', label, 'count', total) ORDER BY total DESC), '[]'::json)
         FROM (
-          SELECT referrer AS label, COUNT(*)::int AS visits
-          FROM link_visit_events e WHERE e.code = page_codes.code
-          GROUP BY referrer ORDER BY visits DESC LIMIT 5
-        ) AS items) AS referrers
-    FROM page_codes
+          SELECT referrer AS label, COUNT(*)::int AS total
+          FROM filtered_events GROUP BY referrer ORDER BY total DESC LIMIT 5
+        ) AS items) AS referrers,
+      (SELECT COALESCE(json_agg(json_build_object('day', day, 'clicks', clicks) ORDER BY day), '[]'::json)
+        FROM (
+          SELECT TO_CHAR(DATE_TRUNC('day', created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS day,
+            COUNT(*)::int AS clicks
+          FROM filtered_events GROUP BY 1
+        ) AS daily) AS days,
+      (SELECT COALESCE(json_agg(json_build_object(
+          'country', country, 'city', city, 'device', device,
+          'operating_system', operating_system, 'browser', browser,
+          'language', language, 'referrer', referrer, 'created_at', created_at
+        ) ORDER BY created_at DESC), '[]'::json)
+        FROM (
+          SELECT country, city, device, operating_system, browser, language, referrer, created_at
+          FROM filtered_events ORDER BY created_at DESC LIMIT 50
+        ) AS recent) AS activity
+    FROM target_link
   `
+
+  return rows[0]
 }

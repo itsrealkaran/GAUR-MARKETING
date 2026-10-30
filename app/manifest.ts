@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "GAUR LINKS",
     short_name: "GAUR LINKS",
     description:
-      "GAUR LINKS is a powerful smart link generator that lets users create WhatsApp direct chat links, dynamic redirects, UTM campaign URLs, QR codes, and shareable smart links instantly.",
+      "GAUR LINKS creates tracked redirect links, UTM campaign URLs, QR codes, and shareable smart links.",
     start_url: "/",
     display: "standalone",
     background_color: "#f4f1ea",

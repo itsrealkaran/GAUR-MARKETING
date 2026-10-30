@@ -5,7 +5,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: "*",
       allow: "/",
-      disallow: ["/r/", "/link/"],
+      disallow: ["/r/", "/link"],
     },
     sitemap: "https://gaurmarketing.com/sitemap.xml",
   }
