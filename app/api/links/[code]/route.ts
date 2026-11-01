@@ -37,6 +37,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
     `
 
     if (!rows[0]) return NextResponse.json({ error: "Link not found" }, { status: 404 })
+    cacheLinkDestination(String(rows[0].code), String(rows[0].target_url))
     return NextResponse.json(rows[0])
   } catch (error) {
     console.error("Failed to update tracked link:", error)
@@ -55,6 +56,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     `
 
     if (!rows[0]) return NextResponse.json({ error: "Link not found" }, { status: 404 })
+    forgetLinkDestination(code)
     return NextResponse.json({ deleted: true, code: rows[0].code })
   } catch (error) {
     console.error("Failed to delete tracked link:", error)

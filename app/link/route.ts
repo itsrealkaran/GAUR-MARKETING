@@ -1,5 +1,14 @@
-import { NextResponse } from "next/server"
-import { buildForwarderTarget, buildLinkCode, ensureLinksTable, findOrCreateLink, getVisitorId, setVisitorCookie, trackLinkVisit } from "@/lib/neon"
+import { after, NextResponse } from "next/server"
+import {
+  buildForwarderTarget,
+  buildLinkCode,
+  cacheLinkDestination,
+  ensureLinksTable,
+  findOrCreateLink,
+  getVisitorId,
+  recordLinkVisit,
+  setVisitorCookie,
+} from "@/lib/neon"
 
 export async function GET(request: Request) {
   const url = new URL(request.url)
@@ -8,14 +17,24 @@ export async function GET(request: Request) {
   if (!finalTargetUrl) {
     return NextResponse.json({ error: "A valid url query parameter is required" }, { status: 400 })
   }
+
   const code = buildLinkCode(finalTargetUrl)
-
-  await ensureLinksTable()
-  await findOrCreateLink(finalTargetUrl, code)
+  cacheLinkDestination(code, finalTargetUrl)
   const visitor = getVisitorId(request.headers)
-  const link = await trackLinkVisit(code, request.headers, visitor.id)
+  const headers = request.headers
 
-  const response = NextResponse.redirect(link?.target_url || finalTargetUrl)
+  // Destination is already known from the query string — redirect immediately.
+  after(async () => {
+    try {
+      await ensureLinksTable()
+      await findOrCreateLink(finalTargetUrl, code)
+      await recordLinkVisit(code, headers, visitor.id)
+    } catch (error) {
+      console.error("Failed to persist forwarder visit:", error)
+    }
+  })
+
+  const response = NextResponse.redirect(finalTargetUrl)
   setVisitorCookie(response, visitor)
   return response
 }

@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server"
-import { ensureLinksTable, getVisitorId, setVisitorCookie, trackLinkVisit } from "@/lib/neon"
+import { after, NextResponse } from "next/server"
+import { getLinkDestination, getVisitorId, recordLinkVisit, setVisitorCookie } from "@/lib/neon"
 
 export async function GET(request: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
@@ -8,10 +8,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ code
   }
 
   try {
-    await ensureLinksTable()
     const visitor = getVisitorId(request.headers)
-    const link = await trackLinkVisit(code, request.headers, visitor.id)
+    const link = await getLinkDestination(code)
     if (link?.target_url) {
+      const headers = request.headers
+      after(async () => {
+        try {
+          await recordLinkVisit(link.code, headers, visitor.id)
+        } catch (error) {
+          console.error("Failed to record link visit:", error)
+        }
+      })
       const response = NextResponse.redirect(link.target_url)
       setVisitorCookie(response, visitor)
       return response

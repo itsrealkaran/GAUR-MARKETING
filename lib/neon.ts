@@ -7,6 +7,37 @@ const databaseUrl = process.env.DATABASE_URL_POOLED || process.env.DATABASE_URL
 export const sql = neon(databaseUrl || "")
 let linksSchemaPromise: Promise<void> | null = null
 
+const DESTINATION_CACHE_LIMIT = 2000
+const destinationCache = new Map<string, { code: string; url: string; expiresAt: number }>()
+
+export function cacheLinkDestination(code: string, url: string) {
+  if (!code || !url) return
+  if (destinationCache.size >= DESTINATION_CACHE_LIMIT) {
+    const oldest = destinationCache.keys().next().value
+    if (oldest) destinationCache.delete(oldest)
+  }
+  const entry = { code, url, expiresAt: Date.now() + 5 * 60 * 1000 }
+  destinationCache.set(code, entry)
+  destinationCache.set(code.toLowerCase(), entry)
+}
+
+export function forgetLinkDestination(code: string) {
+  destinationCache.delete(code)
+  destinationCache.delete(code.toLowerCase())
+}
+
+function peekCachedLink(code: string) {
+  const cached = destinationCache.get(code) || destinationCache.get(code.toLowerCase())
+  if (!cached) return null
+  if (cached.expiresAt <= Date.now()) {
+    destinationCache.delete(code)
+    destinationCache.delete(code.toLowerCase())
+    return null
+  }
+  return { code: cached.code, target_url: cached.url }
+}
+
+
 export function normalizeTargetUrl(rawUrl: string) {
   const trimmed = rawUrl.trim()
   if (!trimmed) return ""
@@ -104,7 +135,9 @@ export async function findOrCreateLink(targetUrl: string, alias?: string) {
     RETURNING code, target_url, visits
   `) as Array<{ code: string; target_url: string; visits: number }>
 
-  return rows[0]
+  const link = rows[0]
+  if (link) cacheLinkDestination(link.code, link.target_url)
+  return link
 }
 
 export function getVisitorId(headers: Headers) {
@@ -311,7 +344,44 @@ async function locationFromHeaders(headers: Headers) {
   }
 }
 
-export async function trackLinkVisit(code: string, headers: Headers, visitorId: string) {
+/** Fast destination lookup for redirects. Skips visit writes and geo. */
+export async function getLinkDestination(code: string) {
+  const normalized = decodeURIComponent(code).trim()
+  if (!normalized) return undefined
+
+  const cached = peekCachedLink(normalized)
+  if (cached) return { code: cached.code, target_url: cached.target_url, visits: 0 }
+
+  try {
+    const rows = (await sql`
+      SELECT code, target_url, visits
+      FROM links
+      WHERE code = ${normalized}
+      LIMIT 1
+    `) as Array<{ code: string; target_url: string; visits: number }>
+    if (rows[0]) {
+      cacheLinkDestination(rows[0].code, rows[0].target_url)
+      return rows[0]
+    }
+  } catch {
+    await ensureLinksTable()
+    const rows = (await sql`
+      SELECT code, target_url, visits
+      FROM links
+      WHERE code = ${normalized}
+      LIMIT 1
+    `) as Array<{ code: string; target_url: string; visits: number }>
+    if (rows[0]) {
+      cacheLinkDestination(rows[0].code, rows[0].target_url)
+      return rows[0]
+    }
+  }
+
+  return undefined
+}
+
+/** Persist click analytics after the redirect response has been sent. */
+export async function recordLinkVisit(code: string, headers: Headers, visitorId: string) {
   const rows = (await sql`
     UPDATE links
     SET visits = visits + 1
@@ -320,6 +390,7 @@ export async function trackLinkVisit(code: string, headers: Headers, visitorId: 
   `) as Array<{ code: string; target_url: string; visits: number }>
   const link = rows[0]
   if (!link) return undefined
+  cacheLinkDestination(link.code, link.target_url)
 
   const agent = headers.get("user-agent") || ""
   const location = await locationFromHeaders(headers)
@@ -344,6 +415,10 @@ export async function trackLinkVisit(code: string, headers: Headers, visitorId: 
   }
 
   return link
+}
+
+export async function trackLinkVisit(code: string, headers: Headers, visitorId: string) {
+  return recordLinkVisit(code, headers, visitorId)
 }
 
 export async function getLinkReport(code: string, from: Date, to: Date) {
